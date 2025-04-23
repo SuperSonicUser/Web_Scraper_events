@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from scraper import run_scraper
+import json
+import os
 
 app = FastAPI()
 
@@ -13,5 +14,10 @@ app.add_middleware(
 )
 
 @app.get("/scrape-events")
-def scrape():
-    return {"status": "success", "events": run_scraper()}
+def get_saved_events():
+    try:
+        with open("data/events.json", "r", encoding="utf-8") as f:
+            events = json.load(f)
+        return {"status": "success", "events": events}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
