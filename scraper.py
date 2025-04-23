@@ -1,4 +1,4 @@
-import requests, re, base64
+import requests, re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -8,24 +8,26 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
 import os
 from dotenv import load_dotenv
+from cloudinary.uploader import upload as cloudinary_upload
+from cloudinary.utils import cloudinary_url
+import cloudinary
 
 load_dotenv()
 
-IMGBB_API_KEY = os.getenv("IMGBB_API_KEY")
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+)
 
-
-def upload_to_imgbb(image_bytes, event_name):
-    encoded = base64.b64encode(image_bytes)
-    payload = {
-        "key": IMGBB_API_KEY,
-        "image": encoded,
-        "name": event_name.replace(" ", "_")
-    }
-    res = requests.post("https://api.imgbb.com/1/upload", data=payload)
-    if res.status_code == 200:
-        return res.json()["data"]["url"]
-    return ""
-
+def upload_to_cloudinary(image_bytes, public_id):
+    try:
+        res = cloudinary_upload(image_bytes, public_id=public_id.replace(" ", "_"))
+        return res.get("secure_url", "")
+    except Exception as e:
+        print("Cloudinary upload failed:", e)
+        return ""
 
 def run_scraper():
     options = Options()
@@ -63,7 +65,7 @@ def run_scraper():
                 uploaded_url = ""
                 for img_url in image_urls:
                     img_data = requests.get(img_url).content
-                    uploaded_url = upload_to_imgbb(img_data, name)
+                    uploaded_url = upload_to_cloudinary(img_data, name)
                     break
                 results.append({
                     "event_name": name,
