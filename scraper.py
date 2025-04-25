@@ -1,4 +1,4 @@
-import requests, re
+import requests, re, os, json
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
@@ -6,12 +6,12 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.chrome import ChromeDriverManager
-import os
 from dotenv import load_dotenv
 from cloudinary.uploader import upload as cloudinary_upload
 from cloudinary.utils import cloudinary_url
 import cloudinary
 
+# Load environment variables
 load_dotenv()
 
 # Configure Cloudinary
@@ -68,17 +68,25 @@ def run_scraper():
                     uploaded_url = upload_to_cloudinary(img_data, name)
                     break
                 results.append({
-                    "event_name": name,
+                    "id": len(results) + 1,
+                    "title": name,
                     "organization": org,
-                    "date_time": dt,
+                    "date": dt,
+                    "time": "",  # Optional: extract if needed
                     "location": loc,
-                    "image_url": uploaded_url
+                    "description": f"{name} hosted by {org}",
+                    "category": "General",  # Optional: customize this
+                    "attendees": 0,  # Placeholder, update if count available
+                    "tags": [],
+                    "image": uploaded_url
                 })
             except Exception as e:
                 print("Skipping event due to:", e)
 
+    # First page scrape
     scrape_events()
 
+    # Handle pagination
     while True:
         try:
             next_button = driver.find_element(By.XPATH, "//a[@aria-label='Next page of results' and contains(@class, 'has-items')]")
@@ -92,4 +100,10 @@ def run_scraper():
             break
 
     driver.quit()
+
+    # Save results to JSON
+    os.makedirs("data", exist_ok=True)
+    with open("data/events.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+
     return results
