@@ -1,7 +1,6 @@
 fastapi
 uvicorn
-selenium
-webdriver-manager
-requests
 python-dotenv
 cloudinary
+requests
+playwright

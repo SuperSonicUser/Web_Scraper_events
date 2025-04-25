@@ -1,20 +1,13 @@
-import requests, re, os, json
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+import os, re, json, requests
 from dotenv import load_dotenv
 from cloudinary.uploader import upload as cloudinary_upload
 from cloudinary.utils import cloudinary_url
 import cloudinary
+from playwright.sync_api import sync_playwright
 
-# Load environment variables
 load_dotenv()
 
-# Configure Cloudinary
+# Cloudinary config
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -30,78 +23,54 @@ def upload_to_cloudinary(image_bytes, public_id):
         return ""
 
 def run_scraper():
-    options = Options()
-    options.add_argument('--headless')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
-    driver.get("https://csuohio.presence.io/events")
-
-    wait = WebDriverWait(driver, 10)
-    wait.until(EC.presence_of_all_elements_located((By.XPATH, "//div[@class='card ng-scope focused-card']")))
-
     results = []
 
-    def scrape_images(event):
-        image_elements = event.find_elements(By.CSS_SELECTOR, "div.featured-org-img[ng-if='vm.event.hasCoverImage']")
-        image_urls = []
-        for element in image_elements:
-            style = element.get_attribute("style")
-            match = re.search(r"background-image: url\\((.*?)\\)", style)
-            if match:
-                image_urls.append(match.group(1).replace('"', ''))
-        return image_urls
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto("https://csuohio.presence.io/events", timeout=60000)
 
-    def scrape_events():
-        events = driver.find_elements(By.XPATH, "//div[@class='card ng-scope focused-card']")
-        for event in events:
+        page.wait_for_selector("div.card.focused-card")
+
+        events = page.query_selector_all("div.card.focused-card")
+
+        for i, event in enumerate(events):
             try:
-                name = event.find_element(By.XPATH, ".//h2/a").text
-                org = event.find_element(By.XPATH, ".//small[@class='org-name']/a").text
-                dt = event.find_element(By.XPATH, ".//small[contains(@aria-label, 'start date and time')]").text
-                loc = event.find_element(By.XPATH, ".//small[contains(@aria-label, 'location')]").text
-                image_urls = scrape_images(event)
-                uploaded_url = ""
-                for img_url in image_urls:
-                    img_data = requests.get(img_url).content
-                    uploaded_url = upload_to_cloudinary(img_data, name)
-                    break
+                name = event.query_selector("h2 a").inner_text()
+                org = event.query_selector("small.org-name a").inner_text()
+                dt = event.query_selector("small[aria-label*='start date and time']").inner_text()
+                loc = event.query_selector("small[aria-label*='location']").inner_text()
+
+                # Extract image from background-image style (if exists)
+                image_style = event.query_selector("div.featured-org-img")
+                image_url = ""
+                if image_style:
+                    style = image_style.get_attribute("style")
+                    match = re.search(r'url\("?(.*?)"?\)', style)
+                    if match:
+                        raw_img = match.group(1)
+                        img_data = requests.get(raw_img).content
+                        image_url = upload_to_cloudinary(img_data, name)
+
                 results.append({
-                    "id": len(results) + 1,
+                    "id": i + 1,
                     "title": name,
                     "organization": org,
                     "date": dt,
-                    "time": "",  # Optional: extract if needed
+                    "time": "",
                     "location": loc,
-                    "description": f"{name} hosted by {org}",
-                    "category": "General",  # Optional: customize this
-                    "attendees": 0,  # Placeholder, update if count available
+                    "description": f"{name} by {org}",
+                    "category": "General",
+                    "attendees": 0,
                     "tags": [],
-                    "image": uploaded_url
+                    "image": image_url
                 })
             except Exception as e:
                 print("Skipping event due to:", e)
 
-    # First page scrape
-    scrape_events()
+        browser.close()
 
-    # Handle pagination
-    while True:
-        try:
-            next_button = driver.find_element(By.XPATH, "//a[@aria-label='Next page of results' and contains(@class, 'has-items')]")
-            if next_button.is_enabled():
-                driver.execute_script("arguments[0].click();", next_button)
-                WebDriverWait(driver, 5).until(EC.staleness_of(next_button))
-                scrape_events()
-            else:
-                break
-        except:
-            break
-
-    driver.quit()
-
-    # Save results to JSON
+    # Save results to events.json
     os.makedirs("data", exist_ok=True)
     with open("data/events.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
