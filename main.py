@@ -28,3 +28,4 @@ def update_and_get_events():
         return {"status": "success", "events": events}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+

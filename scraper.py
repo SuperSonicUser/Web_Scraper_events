@@ -1,4 +1,4 @@
-import os, re, json, requests, subprocess
+import os, re, json, requests, subprocess, time
 from dotenv import load_dotenv
 from cloudinary.uploader import upload as cloudinary_upload
 from cloudinary.utils import cloudinary_url
@@ -8,7 +8,7 @@ from playwright.sync_api import sync_playwright, TimeoutError
 # Load .env variables
 load_dotenv()
 
-# Cloudinary setup
+# Configure Cloudinary
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -30,70 +30,110 @@ def run_scraper():
         print("Playwright install error:", e)
 
     results = []
+    max_retries = 10
+    url = "https://csuohio.presence.io/events"
 
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
 
-            print("Navigating to event page...")
-            page.goto("https://csuohio.presence.io/events", timeout=60000)
+            # Retry logic like original Selenium code
+            for attempt in range(1, max_retries + 1):
+                print(f"🔁 Attempt {attempt}: Loading event page...")
+                page.goto(url, timeout=60000)
+                time.sleep(2)
 
-            try:
-                # Wait for visible event cards to load
-                page.wait_for_selector("div.card.ng-scope.focused-card", timeout=15000)
-            except TimeoutError:
-                print("⚠️ Event cards not found on page.")
+                try:
+                    page.wait_for_selector("div.card.ng-scope.focused-card", timeout=10000)
+                    print("✅ Event cards loaded successfully.\n")
+                    break
+                except TimeoutError:
+                    print("⚠️ Event cards not loaded. Refreshing page...\n")
+                    page.reload()
+                    time.sleep(2)
+            else:
+                print("❌ Failed to load events after multiple retries.")
                 browser.close()
                 return []
 
-            events = page.query_selector_all("div.card.ng-scope.focused-card")
-            print(f"✅ Found {len(events)} events.")
+            # Define scraper for each page
+            def scrape_events_on_page():
+                page.wait_for_selector("div.card.ng-scope.focused-card", timeout=10000)
+                return page.query_selector_all("div.card.ng-scope.focused-card")
 
-            for i, event in enumerate(events):
+            while True:
                 try:
-                    name = event.query_selector("h2 a").inner_text()
-                    org = event.query_selector("div.org-name").inner_text()
-                    dt = event.query_selector("div.date-time").inner_text()
-                    loc = event.query_selector("div.location").inner_text()
+                    events = scrape_events_on_page()
+                    print(f"✅ Found {len(events)} events on this page.")
 
-                    image_url = ""
-                    image_el = event.query_selector("div.featured-org-img")
-                    if image_el:
-                        style = image_el.get_attribute("style")
-                        match = re.search(r'url\("?(.*?)"?\)', style)
-                        if match:
-                            raw_img = match.group(1)
-                            img_data = requests.get(raw_img).content
-                            image_url = upload_to_cloudinary(img_data, name)
+                    for event in events:
+                        try:
+                            title_el = event.query_selector("h2 a")
+                            org_el = event.query_selector("small.org-name a")
+                            date_el = event.query_selector("small[aria-label*='start date and time']")
+                            loc_el = event.query_selector("small[aria-label*='location']")
 
-                    results.append({
-                        "id": i + 1,
-                        "title": name,
-                        "organization": org,
-                        "date": dt,
-                        "time": "",
-                        "location": loc,
-                        "description": f"{name} by {org}",
-                        "category": "General",
-                        "attendees": 0,
-                        "tags": [],
-                        "image": image_url
-                    })
+                            name = title_el.inner_text() if title_el else "Untitled"
+                            org = org_el.inner_text() if org_el else "Unknown Org"
+                            dt = date_el.inner_text() if date_el else "Date TBD"
+                            loc = loc_el.inner_text() if loc_el else "Location TBD"
+
+                            image_url = ""
+                            image_el = event.query_selector("div.featured-org-img")
+                            if image_el:
+                                style = image_el.get_attribute("style")
+                                match = re.search(r'url\("?(.*?)"?\)', style)
+                                if match:
+                                    raw_img = match.group(1)
+                                    img_data = requests.get(raw_img).content
+                                    image_url = upload_to_cloudinary(img_data, name)
+
+                            results.append({
+                                "id": len(results) + 1,
+                                "title": name,
+                                "organization": org,
+                                "date": dt,
+                                "time": "",
+                                "location": loc,
+                                "description": f"{name} by {org}",
+                                "category": "General",
+                                "attendees": 0,
+                                "tags": [],
+                                "image": image_url
+                            })
+
+                            print(f"✅ Scraped: {name}")
+
+                        except Exception as e:
+                            print(f"❌ Skipping one event: {e}")
+
+                    # Handle pagination
+                    next_button = page.query_selector("a[aria-label='Next page of results'].has-items")
+                    if next_button and "disabled" not in next_button.get_attribute("class"):
+                        print("➡️ Navigating to next page...\n")
+                        next_button.click()
+                        page.wait_for_timeout(3000)
+                    else:
+                        print("✅ No more pages to scrape.")
+                        break
+
                 except Exception as e:
-                    print("❌ Skipping one event:", e)
+                    print("❌ Error during pagination:", e)
+                    break
 
             browser.close()
 
     except Exception as e:
         print("Playwright runtime error:", e)
 
-    # Save to JSON
+    # Save results to JSON
     try:
         os.makedirs("data", exist_ok=True)
         with open("data/events.json", "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
+        print(f"\n🎉 Saved {len(results)} events to data/events.json")
     except Exception as e:
-        print("File save error:", e)
+        print("Error saving JSON file:", e)
 
     return results
