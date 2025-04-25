@@ -3,12 +3,12 @@ from dotenv import load_dotenv
 from cloudinary.uploader import upload as cloudinary_upload
 from cloudinary.utils import cloudinary_url
 import cloudinary
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, TimeoutError
 
-# Load environment variables
+# Load .env variables
 load_dotenv()
 
-# Configure Cloudinary
+# Cloudinary setup
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
     api_key=os.getenv("CLOUDINARY_API_KEY"),
@@ -24,11 +24,10 @@ def upload_to_cloudinary(image_bytes, public_id):
         return ""
 
 def run_scraper():
-    # 👇 Install Chromium at runtime if not present (Render free plan workaround)
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception as e:
-        print("Playwright Chromium already installed or failed to install:", e)
+        print("Playwright install error:", e)
 
     results = []
 
@@ -36,23 +35,32 @@ def run_scraper():
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             page = browser.new_page()
+
+            print("Navigating to event page...")
             page.goto("https://csuohio.presence.io/events", timeout=60000)
 
-            page.wait_for_selector("div.card.focused-card")
-            events = page.query_selector_all("div.card.focused-card")
+            try:
+                # Wait for visible event cards to load
+                page.wait_for_selector("div.event-card", timeout=15000)
+            except TimeoutError:
+                print("⚠️ Event cards not found on page.")
+                browser.close()
+                return []
+
+            events = page.query_selector_all("div.event-card")
+            print(f"✅ Found {len(events)} events.")
 
             for i, event in enumerate(events):
                 try:
                     name = event.query_selector("h2 a").inner_text()
-                    org = event.query_selector("small.org-name a").inner_text()
-                    dt = event.query_selector("small[aria-label*='start date and time']").inner_text()
-                    loc = event.query_selector("small[aria-label*='location']").inner_text()
+                    org = event.query_selector("div.org-name").inner_text()
+                    dt = event.query_selector("div.date-time").inner_text()
+                    loc = event.query_selector("div.location").inner_text()
 
-                    # Extract image from background-image style
                     image_url = ""
-                    image_style = event.query_selector("div.featured-org-img")
-                    if image_style:
-                        style = image_style.get_attribute("style")
+                    image_el = event.query_selector("div.featured-org-img")
+                    if image_el:
+                        style = image_el.get_attribute("style")
                         match = re.search(r'url\("?(.*?)"?\)', style)
                         if match:
                             raw_img = match.group(1)
@@ -72,21 +80,20 @@ def run_scraper():
                         "tags": [],
                         "image": image_url
                     })
-
                 except Exception as e:
-                    print("Skipping event due to:", e)
+                    print("❌ Skipping one event:", e)
 
             browser.close()
 
     except Exception as e:
-        print("Error launching Playwright browser:", e)
+        print("Playwright runtime error:", e)
 
-    # Save scraped results to JSON
+    # Save to JSON
     try:
         os.makedirs("data", exist_ok=True)
         with open("data/events.json", "w", encoding="utf-8") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        print("Error saving JSON file:", e)
+        print("File save error:", e)
 
     return results
