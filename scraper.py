@@ -50,8 +50,10 @@ def run_scraper():
                     break
                 except TimeoutError:
                     print("⚠️ Event cards not loaded. Refreshing page...\n")
-                    page.reload()
-                    time.sleep(2)
+                    page.reload(wait_until="domcontentloaded")
+                    page.wait_for_timeout(2000)
+
+
             else:
                 print("❌ Failed to load events after multiple retries.")
                 browser.close()
