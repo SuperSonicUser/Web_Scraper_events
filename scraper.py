@@ -35,8 +35,19 @@ def run_scraper():
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            # 🚨 Launch Chromium in a way that mimics a real user
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"]
+            )
+
+            # Spoof user-agent & viewport
+            page = browser.new_page(user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/113.0.0.0 Safari/537.36"
+            ))
+            page.set_viewport_size({"width": 1280, "height": 800})
 
             # Retry logic using polling
             events = []
@@ -84,8 +95,11 @@ def run_scraper():
                             match = re.search(r'url\("?(.*?)"?\)', style)
                             if match:
                                 raw_img = match.group(1)
-                                img_data = requests.get(raw_img).content
-                                image_url = upload_to_cloudinary(img_data, name)
+                                try:
+                                    img_data = requests.get(raw_img).content
+                                    image_url = upload_to_cloudinary(img_data, name)
+                                except Exception as e:
+                                    print(f"❌ Image fetch error: {e}")
 
                         local_results.append({
                             "id": len(results) + len(local_results) + 1,
