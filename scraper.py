@@ -41,13 +41,13 @@ def run_scraper():
 
             try:
                 # Wait for visible event cards to load
-                page.wait_for_selector("div.event-card", timeout=15000)
+                page.wait_for_selector("div.card.ng-scope.focused-card", timeout=15000)
             except TimeoutError:
                 print("⚠️ Event cards not found on page.")
                 browser.close()
                 return []
 
-            events = page.query_selector_all("div.event-card")
+            events = page.query_selector_all("div.card.ng-scope.focused-card")
             print(f"✅ Found {len(events)} events.")
 
             for i, event in enumerate(events):
