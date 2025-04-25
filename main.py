@@ -20,7 +20,7 @@ app.add_middleware(
 def root():
     return {"message": "FastAPI is running! Visit /events to fetch scraped event data."}
 
-# 🔥 MAIN endpoint — triggers scraping, saves JSON, returns events
+#  MAIN endpoint — triggers scraping, saves JSON, returns events
 @app.get("/events")
 def update_and_get_events():
     try:
