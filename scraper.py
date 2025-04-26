@@ -5,6 +5,18 @@ from cloudinary.utils import cloudinary_url
 import cloudinary
 from playwright.sync_api import sync_playwright
 
+
+import requests
+
+def run_scraper():
+    # Test if Render server can access the target website
+    try:
+        print("🌐 Testing if server can reach target site...")
+        response = requests.get("https://csuohio.presence.io/events", timeout=10)
+        print(f"✅ Server HTTP Status Code: {response.status_code}")
+    except Exception as e:
+        print(f"❌ Server Network Test Failed: {e}")
+
 # Load environment variables
 load_dotenv()
 
@@ -23,7 +35,7 @@ def upload_to_cloudinary(image_bytes, public_id):
         print("Cloudinary upload failed:", e)
         return ""
 
-def run_scraper():
+def run_scraper2():
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception as e:
