@@ -30,15 +30,3 @@ def update_and_get_events():
         return {"status": "error", "message": str(e)}
 
 
-if __name__ == "__main__":
-    # Create data directory if it doesn't exist
-    os.makedirs("data", exist_ok=True)
-
-    # Run the scraper and save results to JSON
-    try:
-        events = run_scraper()
-        with open("data/events.json", "w", encoding="utf-8") as f:
-            json.dump(events, f, ensure_ascii=False, indent=4)
-        print("✅ Events saved to data/events.json")
-    except Exception as e:
-        print(f"❌ Error running scraper: {e}")
