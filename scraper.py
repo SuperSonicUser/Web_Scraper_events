@@ -35,10 +35,16 @@ def run_scraper():
 
     try:
         with sync_playwright() as p:
-            # 🚨 Launch Chromium in a way that mimics a real user
+            # 🚨 Launch Chromium properly for server
             browser = p.chromium.launch(
                 headless=True,
-                args=["--disable-blink-features=AutomationControlled"]
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-blink-features=AutomationControlled"
+                ]
             )
 
             # Spoof user-agent & viewport
@@ -53,18 +59,22 @@ def run_scraper():
             events = []
             for attempt in range(1, max_retries + 1):
                 print(f"🔁 Attempt {attempt}: Loading event page...")
-                page.goto(url, timeout=60000)
-                page.wait_for_timeout(3000)
-
-                events = page.query_selector_all("div.card.ng-scope.focused-card")
-
-                if len(events) > 0:
-                    print(f"✅ Found {len(events)} event cards on first page.\n")
-                    break
-                else:
-                    print("⚠️ No event cards found. Retrying...\n")
-                    page.reload(wait_until="domcontentloaded")
+                try:
+                    page.goto(url, timeout=120000)
                     page.wait_for_timeout(3000)
+
+                    events = page.query_selector_all("div.card.ng-scope.focused-card")
+
+                    if len(events) > 0:
+                        print(f"✅ Found {len(events)} event cards on first page.\n")
+                        break
+                    else:
+                        print("⚠️ No event cards found. Retrying...\n")
+                        page.reload(wait_until="domcontentloaded")
+                        page.wait_for_timeout(3000)
+                except Exception as e:
+                    print(f"Page load error: {e}")
+
             else:
                 print("❌ Failed to load events after multiple retries.")
                 browser.close()
