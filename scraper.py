@@ -61,11 +61,7 @@ def run_scraper():
                     page.goto(url, timeout=120000)
                     page.wait_for_timeout(5000)  # Increased wait time
 
-                    # NEW: Dump the loaded HTML
-                    html_content = page.content()
-                    print("\n🔎 Dumping loaded HTML content (first 5000 characters):\n")
-                    print(html_content[:5000])
-                    print("\n🔎 End of HTML dump\n")
+                   
 
                     events = page.query_selector_all("div.card.ng-scope.focused-card")
 
