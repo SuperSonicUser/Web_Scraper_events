@@ -59,7 +59,7 @@ def run_scraper():
                 print(f"🔁 Attempt {attempt}: Loading event page...")
                 try:
                     page.goto(url, timeout=120000)
-                    page.wait_for_timeout(5000)  # Increased wait time
+                    page.wait_for_selector("div.card.ng-scope.focused-card", timeout=10000)  # wait until event cards actually appear
 
                    
 
