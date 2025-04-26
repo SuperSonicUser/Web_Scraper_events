@@ -5,18 +5,6 @@ from cloudinary.utils import cloudinary_url
 import cloudinary
 from playwright.sync_api import sync_playwright
 
-
-import requests
-
-def run_scraper():
-    # Test if Render server can access the target website
-    try:
-        print("🌐 Testing if server can reach target site...")
-        response = requests.get("https://csuohio.presence.io/events", timeout=10)
-        print(f"✅ Server HTTP Status Code: {response.status_code}")
-    except Exception as e:
-        print(f"❌ Server Network Test Failed: {e}")
-
 # Load environment variables
 load_dotenv()
 
@@ -35,7 +23,7 @@ def upload_to_cloudinary(image_bytes, public_id):
         print("Cloudinary upload failed:", e)
         return ""
 
-def run_scraper2():
+def run_scraper():
     try:
         subprocess.run(["playwright", "install", "chromium"], check=True)
     except Exception as e:
@@ -47,7 +35,6 @@ def run_scraper2():
 
     try:
         with sync_playwright() as p:
-            # 🚨 Launch Chromium properly for server
             browser = p.chromium.launch(
                 headless=True,
                 args=[
@@ -59,7 +46,6 @@ def run_scraper2():
                 ]
             )
 
-            # Spoof user-agent & viewport
             page = browser.new_page(user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -67,13 +53,19 @@ def run_scraper2():
             ))
             page.set_viewport_size({"width": 1280, "height": 800})
 
-            # Retry logic using polling
+            # Retry logic
             events = []
             for attempt in range(1, max_retries + 1):
                 print(f"🔁 Attempt {attempt}: Loading event page...")
                 try:
                     page.goto(url, timeout=120000)
-                    page.wait_for_timeout(3000)
+                    page.wait_for_timeout(5000)  # Increased wait time
+
+                    # NEW: Dump the loaded HTML
+                    html_content = page.content()
+                    print("\n🔎 Dumping loaded HTML content (first 5000 characters):\n")
+                    print(html_content[:5000])
+                    print("\n🔎 End of HTML dump\n")
 
                     events = page.query_selector_all("div.card.ng-scope.focused-card")
 
@@ -92,7 +84,7 @@ def run_scraper2():
                 browser.close()
                 return []
 
-            # Function to scrape all cards on current page
+            # Scrape function
             def scrape_events_on_page():
                 local_results = []
                 current_events = page.query_selector_all("div.card.ng-scope.focused-card")
@@ -147,7 +139,7 @@ def run_scraper2():
             # Scrape first page
             results.extend(scrape_events_on_page())
 
-            # Loop through pagination
+            # Pagination
             while True:
                 next_button = page.query_selector("a[aria-label='Next page of results'].has-items")
                 if next_button and "disabled" not in (next_button.get_attribute("class") or ""):
@@ -164,7 +156,7 @@ def run_scraper2():
     except Exception as e:
         print("Playwright runtime error:", e)
 
-    # Save results to JSON
+    # Save to JSON
     try:
         os.makedirs("data", exist_ok=True)
         with open("data/events.json", "w", encoding="utf-8") as f:
