@@ -1,4 +1,4 @@
-import os, re, json, requests, subprocess, time
+import os, re, json, requests, subprocess
 from dotenv import load_dotenv
 from cloudinary.uploader import upload as cloudinary_upload
 from cloudinary.utils import cloudinary_url
@@ -53,15 +53,19 @@ def run_scraper():
             ))
             page.set_viewport_size({"width": 1280, "height": 800})
 
-            # Retry logic
             events = []
+
             for attempt in range(1, max_retries + 1):
                 print(f"🔁 Attempt {attempt}: Loading event page...")
                 try:
                     page.goto(url, timeout=120000)
-                    page.wait_for_selector("div.card.ng-scope.focused-card", timeout=10000)  # wait until event cards actually appear
 
-                   
+                    # Smart wait for the event cards
+                    try:
+                        page.wait_for_selector("div.card.ng-scope.focused-card", timeout=30000)
+                    except Exception as e:
+                        print(f"⚠️ Smart wait error: {e}")
+                        page.wait_for_timeout(5000)  # fallback fixed wait
 
                     events = page.query_selector_all("div.card.ng-scope.focused-card")
 
@@ -72,6 +76,7 @@ def run_scraper():
                         print("⚠️ No event cards found. Retrying...\n")
                         page.reload(wait_until="domcontentloaded")
                         page.wait_for_timeout(3000)
+
                 except Exception as e:
                     print(f"Page load error: {e}")
 
@@ -80,7 +85,6 @@ def run_scraper():
                 browser.close()
                 return []
 
-            # Scrape function
             def scrape_events_on_page():
                 local_results = []
                 current_events = page.query_selector_all("div.card.ng-scope.focused-card")
@@ -152,7 +156,7 @@ def run_scraper():
     except Exception as e:
         print("Playwright runtime error:", e)
 
-    # Save to JSON
+    # Save scraped data to JSON
     try:
         os.makedirs("data", exist_ok=True)
         with open("data/events.json", "w", encoding="utf-8") as f:
